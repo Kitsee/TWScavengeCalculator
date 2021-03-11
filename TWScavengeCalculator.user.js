@@ -1,85 +1,64 @@
 // ==UserScript==
 // @name         Kits's Scavenge Calculator
-// @version      0.0.1
-// @author       Kits
+// @description  Provides an in-game calculator utility for scavenging within the Tribal Wars online game. Credit for some of the code and most of the maths goes to Daniel Van Den Berg (daniel.dmvandenberg.nl)
+// @version      0.0.2
+// @author       Kits (Github: Kitsee)
 // @grant        none
 // @include      https://*.tribalwars.*/game.php?*screen=place*mode=scavenge*
+
 // ==/UserScript==
 
-function doMakePersistentInput(eInput) {
-        if (!eInput.id){
-            console.warn(`doMakePersistentInput called on element without id.`, eInput);
-            debugger;
-            return;
-        }
-        let sStoredState = window.localStorage[`persistent_input_${eInput.id}`];
-        eInput.setValue = (sInput)=>{ window.localStorage[`persistent_input_${eInput.id}`] = sInput;};
-        eInput.doRestore = ()=>{eInput.value = sStoredState;};
-        eInput.getValue = ()=>{return eInput.value;};
-        switch (eInput.type){
-            case "checkbox":
-                eInput.doRestore = ()=>{eInput.checked = sStoredState == "true" ? true : false;};
-                eInput.getValue = ()=>{return eInput.checked;};
-            break;
-        }
-        eInput.addEventListener("change",(e)=>{
-            eInput.setValue(e.target.getValue());
-        });
-        eInput.doRestore();
-    }
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+let unitCapacities = {
+    spear: 25,
+    sword: 15,
+    axe: 10,
+    archer: 10,
+    light: 80,
+    marcher: 50,
+    heavy: 50,
+    knight: 100
 }
 
-function sendScavRequest(missionIdx, unitCounts, totalCapacity){
-    //get village number
-    let url = new URL(window.location);
-    const villageNum = url.searchParams.get("village");
-    const hash = window.csrf_token;
-
-    let data = `\
-squad_requests%5B0%5D%5Bvillage_id%5D=${villageNum}\
-&squad_requests%5B0%5D%5Bcandidate_squad%5D%5Bunit_counts%5D%5Bspear%5D=${unitCounts.Sp}\
-&squad_requests%5B0%5D%5Bcandidate_squad%5D%5Bunit_counts%5D%5Bsword%5D=${unitCounts.Sw}\
-&squad_requests%5B0%5D%5Bcandidate_squad%5D%5Bunit_counts%5D%5Baxe%5D=${unitCounts.Ax}\
-&squad_requests%5B0%5D%5Bcandidate_squad%5D%5Bunit_counts%5D%5Barcher%5D=${unitCounts.Ar}\
-&squad_requests%5B0%5D%5Bcandidate_squad%5D%5Bunit_counts%5D%5Blight%5D=${unitCounts.LC}\
-&squad_requests%5B0%5D%5Bcandidate_squad%5D%5Bunit_counts%5D%5Bmarcher%5D=${unitCounts.MA}\
-&squad_requests%5B0%5D%5Bcandidate_squad%5D%5Bunit_counts%5D%5Bheavy%5D=${unitCounts.HC}\
-&squad_requests%5B0%5D%5Bcandidate_squad%5D%5Bunit_counts%5D%5Bknight%5D=${unitCounts.Pa}\
-&squad_requests%5B0%5D%5Bcandidate_squad%5D%5Bcarry_max%5D=${totalCapacity}\
-&squad_requests%5B0%5D%5Boption_id%5D=${missionIdx}\
-&squad_requests%5B0%5D%5Buse_premium%5D=false\
-&h=${hash}`;
-
-    var xhttp = new XMLHttpRequest();
-    xhttp.open("POST", `https://uk54.tribalwars.co.uk/game.php?village=${villageNum}&screen=scavenge_api&ajaxaction=send_squads` , false); //false == synchronous
-    xhttp.setRequestHeader("Content-type","application/x-www-form-urlencoded");
-    xhttp.send(data);
-
+function doMakePersistentInput(eInput) {
+    if (!eInput.id){
+        console.warn(`doMakePersistentInput called on element without id.`, eInput);
+        debugger;
+        return;
+    }
+    let sStoredState = window.localStorage[`persistent_input_${eInput.id}`];
+    eInput.setValue = (sInput)=>{ window.localStorage[`persistent_input_${eInput.id}`] = sInput;};
+    eInput.doRestore = ()=>{eInput.value = sStoredState;};
+    eInput.getValue = ()=>{return eInput.value;};
+    switch (eInput.type){
+        case "checkbox":
+            eInput.doRestore = ()=>{eInput.checked = sStoredState == "true" ? true : false;};
+            eInput.getValue = ()=>{return eInput.checked;};
+            break;
+    }
+    eInput.addEventListener("change",(e)=>{
+        eInput.setValue(e.target.getValue());
+    });
+    eInput.doRestore();
 }
 
 function fnGain(iCap, r, iMaxDuration) {
     return {
-        "FF":Math.round(r[0] * iCap * 0.10),
-        "BB":Math.round(r[1] * iCap * 0.25),
-        "SS":Math.round(r[2] * iCap * 0.50),
-        "RR":Math.round(r[3] * iCap * 0.75)
+        0:Math.round(r[0] * iCap * 0.10),
+        1:Math.round(r[1] * iCap * 0.25),
+        2:Math.round(r[2] * iCap * 0.50),
+        3:Math.round(r[3] * iCap * 0.75)
     };
 }
 
-function getDurationFactor(){
-    const worldSpeed = 1.5;
-	return Math.pow(worldSpeed * 1, -0.55);
-}
-
 function fnDuration(iCap, r, iMaxDuration) {
+    const worldSpeed = 1; //TODO: i shouldnt be hard coded
+    let durationFactor = Math.pow(worldSpeed * 1, -0.55);
+
     return {
-        "FF":r[0] == 0 ? 0 : ((Math.pow(Math.pow(r[0] * iCap, 2) * 100 * Math.pow(0.10, 2), 0.45) + 1800) * getDurationFactor()),
-        "BB":r[1] == 0 ? 0 : ((Math.pow(Math.pow(r[1] * iCap, 2) * 100 * Math.pow(0.25, 2), 0.45) + 1800) * getDurationFactor()),
-        "SS":r[2] == 0 ? 0 : ((Math.pow(Math.pow(r[2] * iCap, 2) * 100 * Math.pow(0.50, 2), 0.45) + 1800) * getDurationFactor()),
-        "RR":r[3] == 0 ? 0 : ((Math.pow(Math.pow(r[3] * iCap, 2) * 100 * Math.pow(0.75, 2), 0.45) + 1800) * getDurationFactor())
+        0:r[0] == 0 ? 0 : ((Math.pow(Math.pow(r[0] * iCap, 2) * 100 * Math.pow(0.10, 2), 0.45) + 1800) * durationFactor),
+        1:r[1] == 0 ? 0 : ((Math.pow(Math.pow(r[1] * iCap, 2) * 100 * Math.pow(0.25, 2), 0.45) + 1800) * durationFactor),
+        2:r[2] == 0 ? 0 : ((Math.pow(Math.pow(r[2] * iCap, 2) * 100 * Math.pow(0.50, 2), 0.45) + 1800) * durationFactor),
+        3:r[3] == 0 ? 0 : ((Math.pow(Math.pow(r[3] * iCap, 2) * 100 * Math.pow(0.75, 2), 0.45) + 1800) * durationFactor)
     };
 }
 
@@ -88,199 +67,283 @@ function fnPadTime(num) {
     return s.substr(s.length-2);
 }
 
-function mainFunc(SendRequests){
-    let unitsAvailable = Array.from(document.querySelectorAll(".units-entry-all")).map((e)=>{return parseInt(e.textContent.substring(1,e.textContent.length-1));});
-    let unitsEnabled = Array.from(document.querySelectorAll(".unitEnabled")).map((e)=>{return e.checked;});
-    let unitsTotal = unitsAvailable.reduce((a,b)=>a+b, 0);
-    var iUnits = {
-        Sp: {cap: 25,cnt: unitsAvailable[0] * unitsEnabled[0]},
-        Sw: {cap: 15,cnt: unitsAvailable[1] * unitsEnabled[1]},
-        Ax: {cap: 10,cnt: unitsAvailable[2] * unitsEnabled[2]},
-        Ar: {cap: 10,cnt: unitsAvailable[3] * unitsEnabled[3]},
-        LC: {cap: 80,cnt: unitsAvailable[4] * unitsEnabled[4]},
-        MA: {cap: 50,cnt: unitsAvailable[5] * unitsEnabled[5]},
-        HC: {cap: 50,cnt: unitsAvailable[6] * unitsEnabled[6]},
-        Pa: {cap:100,cnt: unitsAvailable[7] * unitsEnabled[7]},
-    }
+function mainFunc(){
+    let units = [];
+    let totalCapacity = 0;
+    let allUnitsElements = Array.from(document.querySelectorAll(".units-entry-all")).map((e)=>{return e;});
+    let unitsEnabled = Array.from(document.querySelectorAll(".calc-unit-enabled")).map((e)=>{return e.checked;});
 
-    var iCap = 0;
-    for(const [unitName,unit] of Object.entries(iUnits)){
-        iCap += unit.cap * unit.cnt;
-    };
+    let unitIdx = 0;
+    for (let allUnitElement of allUnitsElements){
+        let thisUnit = {};
+        if(unitsEnabled[unitIdx]){
+            thisUnit.enabled = true;
+            thisUnit.count = parseInt(allUnitElement.textContent.substring(1,allUnitElement.textContent.length-1));
+        }else{
+            thisUnit.enabled = false;
+            thisUnit.count = 0;
+        }
+        thisUnit.name = allUnitElement.getAttribute("data-unit");
+        thisUnit.unitCapacity = unitCapacities[thisUnit.name];
+
+        totalCapacity += thisUnit.count * thisUnit.unitCapacity;
+        units.push(thisUnit);
+        unitIdx++;
+    }
+    units.sort((a,b) => b.unitCapacity - a.unitCapacity);
+    console.log("Units:",units.slice(0));
 
     let r = [7.5, 3, 1.5, 1];
+
+    //mission disable
+    let missionsEnabled = Array.from(document.querySelectorAll(".calc-mission-enabled")).map((e)=>{return e.checked;});
+    for(let i = 0; i < 4; i++){
+        if(!missionsEnabled[i]){
+            r[i] = 0;
+        }
+    }
+
     let iDiv = r[0] + r[1] + r[2] + r[3];
     r[0] /= iDiv;
     r[1] /= iDiv;
     r[2] /= iDiv;
     r[3] /= iDiv;
 
-    var iCaps = {
-        FF: Math.round(iCap * r[0]),
-        BB: Math.round(iCap * r[1]),
-        SS: Math.round(iCap * r[2]),
-        RR: Math.round(iCap * r[3])
-    }
-   
-
-    var fnFill = (raid, unit, field, result) => {
-        let iCount = Math.min(iUnits[unit].cnt * 1, Math.floor(iCaps[raid] / iUnits[unit].cap));
-        iCaps[raid] -= iCount * iUnits[unit].cap;
-        iUnits[unit].cnt -= iCount;
-        field.innerText = iCount;;
-        result[unit] = iCount;
-        return iCount * iUnits[unit].cap;
+    var desiredMissionCapacity = {
+        0: Math.round(totalCapacity * r[0]),
+        1: Math.round(totalCapacity * r[1]),
+        2: Math.round(totalCapacity * r[2]),
+        3: Math.round(totalCapacity * r[3])
     }
 
-    var fnFillRaid = (raid, output, stats) => {
-        var fields = Array.from(document.querySelectorAll(`.unitOutput${output}`)).map((e)=>{return e;});
+    var stats = {
+        ResPerRun:0,
+        ResPerHour:0,
+        RunTime:0,
+    };
+
+    var fill = (missionIdx, unit) => {
+        let allocatedUnitCount = Math.min(unit.count, Math.floor(desiredMissionCapacity[missionIdx] / unit.unitCapacity));
+        desiredMissionCapacity[missionIdx] -= allocatedUnitCount * unit.unitCapacity;
+        unit.count -= allocatedUnitCount;
+        let outputElement = document.querySelector(`#calc_output_${unit.name}_${missionIdx}`);
+        outputElement.innerText = allocatedUnitCount;
+        return allocatedUnitCount * unit.unitCapacity;
+    }
+
+    var fillMission = (missionIdx) => {
         let result = [];
         let totalCap = 0;
 
-        var iRes = fnGain(iCaps[raid], [1,1,1,1], Infinity)[raid];
-        var iHour = fnDuration(iCaps[raid], [1,1,1,1], Infinity)[raid];
+        var iRes = fnGain(desiredMissionCapacity[missionIdx], [1,1,1,1], Infinity)[missionIdx];
+        var iHour = fnDuration(desiredMissionCapacity[missionIdx], [1,1,1,1], Infinity)[missionIdx];
         var iRPH = iHour == 0 ? 0 : iRes / iHour * 60 * 60;
 
         stats.ResPerRun += iRes;
         stats.ResPerHour += iRPH;
         stats.RunTime = Math.max(stats.RunTime,iHour);
-        totalCap += fnFill(raid, "Pa", fields[7],result);
-        totalCap += fnFill(raid, "LC", fields[4],result);
-        totalCap += fnFill(raid, "HC", fields[6],result);
-        totalCap += fnFill(raid, "MA", fields[5],result);
-        totalCap += fnFill(raid, "Sp", fields[0],result);
-        totalCap += fnFill(raid, "Sw", fields[1],result);
-        totalCap += fnFill(raid, "Ax", fields[2],result);
-        totalCap += fnFill(raid, "Ar", fields[3],result);
 
-        if(SendRequests){
-            sendScavRequest(output+1,result,totalCap);
+        for(let unit of units)
+        {
+            totalCap += fill(missionIdx, unit);
         }
     }
 
-    let stats = {
-        ResPerRun:0,
-        ResPerHour:0,
-        RunTime:0,
-    };
-    fnFillRaid("RR", 3, stats);
-    fnFillRaid("SS", 2, stats);
-    fnFillRaid("BB", 1, stats);
-    fnFillRaid("FF", 0, stats);
+    fillMission(3);
+    fillMission(2);
+    fillMission(1);
+    fillMission(0);
 
-    window.resHourOutput.text = `${stats.ResPerHour.toFixed(0)} Res/Hour`;
-    window.resRunOutput.text = `${stats.ResPerRun.toFixed(0)} Res/Run`;
-
-    var timeString = `${fnPadTime(Math.floor(stats.RunTime / 60 / 60))}:${fnPadTime(Math.floor(stats.RunTime / 60) % 60)}:${fnPadTime(Math.floor(stats.RunTime) % 60)}`;
-    window.runTimeOutput.text = timeString;
+    console.log("Leftover Units:",units);
+    let resHourElement = document.querySelector(".calc-output-res-hour");
+    let resRunElement = document.querySelector(".calc-output-res-run");
+    let runTimeElement = document.querySelector(".calc-output-run-time");
+    resHourElement.innerText = `${stats.ResPerHour.toFixed(0)}`;
+    resRunElement.innerText = `${stats.ResPerRun.toFixed(0)}`;
+    runTimeElement.innerText = `${fnPadTime(Math.floor(stats.RunTime / 60 / 60))}:${fnPadTime(Math.floor(stats.RunTime / 60) % 60)}:${fnPadTime(Math.floor(stats.RunTime) % 60)}`;;
 }
 
+function sendScavRequest(missionIdx){
+    const villageNum = (new URL(window.location)).searchParams.get("village");
+    const hash = window.csrf_token;
 
-
-
-// MAIN
-(async function() {
-    'use strict';
-    await sleep(800);
-    let sUniquePrefix = "8720e4c4-7d0d-11eb-9439-0242ac130002_";
-
-    //Create unit checkboxes
-    let tTableSquad = document.querySelector("#scavenge_screen table.candidate-squad-widget tbody");
-    if (!tTableSquad){
-        console.warn("failed to find squad element");
-        debugger;
-        return;
+    let unitCounts = [];
+    let totalCapacity = 0;
+    let outputElements = Array.from(document.querySelectorAll(`.calc-output-mission-${missionIdx}`)).map((e)=>{return e;});
+    for(let outputElement of outputElements){
+        let thisUnit = {};
+        thisUnit.name = outputElement.unitName;
+        thisUnit.count = parseInt(outputElement.innerText);
+        totalCapacity += thisUnit.count * unitCapacities[thisUnit.name];
+        unitCounts.push(thisUnit);
     }
 
-    let rows = [];
+    if(totalCapacity){
+        let data = `squad_requests%5B0%5D%5Bvillage_id%5D=${villageNum}`;
+
+        for(let unit of unitCounts){
+            data += `&squad_requests%5B0%5D%5Bcandidate_squad%5D%5Bunit_counts%5D%5B${unit.name}%5D=${unit.count}`;
+        }
+
+        data += `\
+&squad_requests%5B0%5D%5Bcandidate_squad%5D%5Bcarry_max%5D=${totalCapacity}\
+&squad_requests%5B0%5D%5Boption_id%5D=${missionIdx+1}\
+&squad_requests%5B0%5D%5Buse_premium%5D=false\
+&h=${hash}`;
+
+        var xhttp = new XMLHttpRequest();
+        xhttp.open("POST", `https://uk55.tribalwars.co.uk/game.php?village=${villageNum}&screen=scavenge_api&ajaxaction=send_squads` , false); //false == synchronous //TODO: get the api address from somewhere since the world id is currently hard coded
+        xhttp.setRequestHeader("Content-type","application/x-www-form-urlencoded");
+        xhttp.send(data);
+        //TODO: handle responce
+    }
+}
+
+function constructTable(){
+    let table = document.querySelector("#scavenge_screen table.candidate-squad-widget");
+
+    //add padding to existing table
+    let paddingCol = document.createElement("td");
+    paddingCol.colSpan = 2;
+    table.firstChild.childNodes[0].insertBefore(paddingCol,table.firstChild.childNodes[0].firstChild);
+    table.firstChild.childNodes[1].insertBefore(paddingCol.cloneNode(true),table.firstChild.childNodes[1].firstChild);
+
+    //Construct table
+    let tableBody = document.createElement("tbody");
+    table.appendChild(tableBody);
+
+    //table header
+    let headerRow = table.firstChild.firstChild.cloneNode(true)
+    headerRow.removeChild(headerRow.lastChild);
+    headerRow.lastChild.colSpan = 3;
+    headerRow.lastChild.innerText = " ";
+    for(let colHeader of headerRow.childNodes){
+        if(colHeader.firstChild != null){
+            colHeader.firstChild.className = ""; //remove the "unit_link" class from the new header
+        }
+    }
+    tableBody.appendChild(headerRow);
+
+    //rows
+    let tableRows = [];
     for(let i = 0; i < 5; i++){
-        rows[i] = document.createElement("tr");
-        tTableSquad.appendChild(rows[i]);
+        let row = document.createElement("tr");
+        tableBody.appendChild(row);
+        tableRows[i] = row;
+    }
+
+    //Misson Name & Enabled column
+    let missonNames = [null,"LL","HH","CC","GG"];
+    for(let i = 0; i < 5; i++){
+        let col = document.createElement("td");
+        tableRows[i].appendChild(col);
+
+        if(missonNames[i] != null){
+            let rowHeader = document.createElement("th");
+            rowHeader.innerText = missonNames[i];
+            col.appendChild(rowHeader);
+
+            let col2 = document.createElement("td");
+            tableRows[i].appendChild(col2);
+
+            let chkCheckbox = document.createElement("input");
+            chkCheckbox.type = "checkbox";
+            chkCheckbox.className = "calc-mission-enabled";
+            chkCheckbox.id = `calc_mission_enabled_${i-1}`;
+            doMakePersistentInput(chkCheckbox);
+            col2.appendChild(chkCheckbox);
+        }
+        else{
+            col.colSpan = 2;
+        }
     }
 
 
-    let aUnits = Array.from(document.querySelectorAll(".unit_link")).map((e)=>{return e.getAttribute("data-unit");});
-    for (let sUnit of aUnits){
+    //unit columns
+    let unitNames = Array.from(document.querySelectorAll(".unit_link")).map((e)=>{return e.getAttribute("data-unit");});
+    console.log("Unit Names",unitNames);
+    for (let unitName of unitNames){
 
         //unit enable checkbox
         let eCol = document.createElement("td");
-        rows[0].appendChild(eCol);
+        tableRows[0].appendChild(eCol);
 
         let chkCheckbox = document.createElement("input");
         eCol.appendChild(chkCheckbox);
-        chkCheckbox.setAttribute("type","checkbox");
-        chkCheckbox.setAttribute("class","unitEnabled");
-        chkCheckbox.id = `${sUniquePrefix}${sUnit}`;
+        chkCheckbox.type = "checkbox";
+        chkCheckbox.className = "calc-unit-enabled";
+        chkCheckbox.unitName = unitName;
+        chkCheckbox.id = `calc_unit_enabled_${unitName}`;
         doMakePersistentInput(chkCheckbox);
 
         //output fields
         for(let i = 0; i < 4; i++){
             let col = document.createElement("td");
-            rows[i+1].appendChild(col);
+            tableRows[i+1].appendChild(col);
 
             let output = document.createElement("a");
             col.appendChild(output);
-            output.setAttribute("class",`unitOutput${i}`);
-            output.id = `${sUniquePrefix}${sUnit}_output${i}`;
+            output.className = `calc-output-mission-${i}`;
+            output.id = `calc_output_${unitName}_${i}`;
+            output.unitName = unitName;
             output.innerText = "0";
         }
     }
 
-
+    //Command Buttons
     //Generate Numbers Button
     let genButCol = document.createElement("td");
-    rows[0].appendChild(genButCol);
+    tableRows[3].appendChild(genButCol);
     genButCol.colSpan = 2;
 
     let genButton = document.createElement("a");
     genButCol.appendChild(genButton);
-    genButton.innerText = "Generate Numbers";
+    genButton.innerText = "Generate";
     genButton.addEventListener("click",()=>{
-        mainFunc(false);
+        mainFunc();
     });
 
-    //Send Optimal Orders Button
-    let eColSendToCalculator = document.createElement("td");
-    rows[1].appendChild(eColSendToCalculator);
-    eColSendToCalculator.colSpan = 2;
+    //Gen & Send Button
+    let genSendButCol = document.createElement("td");
+    tableRows[4].appendChild(genSendButCol);
+    genSendButCol.colSpan = 2;
 
-    let aSendToCalculator = document.createElement("a");
-    eColSendToCalculator.appendChild(aSendToCalculator);
-    aSendToCalculator.innerText = "Send Optimal Orders";
-    aSendToCalculator.addEventListener("click",()=>{
-        mainFunc(true);
+    let genSendBut = document.createElement("a");
+    genSendButCol.appendChild(genSendBut);
+    genSendBut.innerText = "Generate & Send";
+    genSendBut.addEventListener("click",()=>{
+        mainFunc();
+        for(let i =0; i< 4; i++){
+            sendScavRequest(i);
+        }
+
     });
 
-    //Res/hour output
-    let resHourCol = document.createElement("td");
-    rows[2].appendChild(resHourCol);
-    resHourCol.colSpan = 2;
+    //Totals Outputs
+    let totalsSettings = [
+        {text:"Res/Hour:", class:"calc-output-res-hour"},
+        {text:"Res/Run:", class:"calc-output-res-run"},
+        {text:"Run Time:", class:"calc-output-run-time"},
+        ];
+    let rowIdx = 0;
+    for(let thisSettings of totalsSettings){
+        let titleCol = document.createElement("td");
+        titleCol.innerText = thisSettings.text;
+        tableRows[rowIdx].appendChild(titleCol);
 
-    let resHourOutput = document.createElement("a");
-    resHourCol.appendChild(resHourOutput);
-    resHourOutput.text = "0 Res/Hour";
+        let valueCol = document.createElement("td");
+        valueCol.className = thisSettings.class;
+        tableRows[rowIdx].appendChild(valueCol);
 
-    //Red/run output
-    let resRunCol = document.createElement("td");
-    rows[3].appendChild(resRunCol);
-    resRunCol.colSpan = 2;
-
-    let resRunOutput = document.createElement("a");
-    resRunCol.appendChild(resRunOutput);
-    resRunOutput.text = "0 Res/Run";
-
-    //Run Time
-    let runTimeCol = document.createElement("td");
-    rows[4].appendChild(runTimeCol);
-    runTimeCol.colSpan = 2;
-
-    let runTimeOutput = document.createElement("a");
-    runTimeCol.appendChild(runTimeOutput);
-    runTimeOutput.text = "";
+        rowIdx++;
+    }
+}
 
 
-    window.resHourOutput = resHourOutput;
-    window.resRunOutput = resRunOutput;
-    window.runTimeOutput = runTimeOutput;
+// MAIN
+(async function() {
+    'use strict';
+    await new Promise(resolve => setTimeout(resolve, 800)); //allow the page to load.
 
+    constructTable();
 })();
