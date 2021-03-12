@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kits's Scavenge Calculator
 // @description  Provides an in-game calculator utility for scavenging within the Tribal Wars online game. Credit for some of the code and most of the maths goes to Daniel Van Den Berg (daniel.dmvandenberg.nl)
-// @version      0.0.2
+// @version      0.0.3
 // @author       Kits (Github: Kitsee)
 // @grant        none
 // @include      https://*.tribalwars.*/game.php?*screen=place*mode=scavenge*
@@ -67,137 +67,214 @@ function fnPadTime(num) {
     return s.substr(s.length-2);
 }
 
-function mainFunc(){
-    let units = [];
-    let totalCapacity = 0;
-    let allUnitsElements = Array.from(document.querySelectorAll(".units-entry-all")).map((e)=>{return e;});
-    let unitsEnabled = Array.from(document.querySelectorAll(".calc-unit-enabled")).map((e)=>{return e.checked;});
+function calculateUnits(){
+    let calculateUnitsMissions = (availableMissions) => {
+        let units = [];
+        let totalCapacity = 0;
+        let allUnitsElements = Array.from(document.querySelectorAll(".units-entry-all")).map((e)=>{return e;});
+        let unitsEnabled = Array.from(document.querySelectorAll(".calc-unit-enabled")).map((e)=>{return e.checked;});
 
-    let unitIdx = 0;
-    for (let allUnitElement of allUnitsElements){
-        let thisUnit = {};
-        if(unitsEnabled[unitIdx]){
-            thisUnit.enabled = true;
-            thisUnit.count = parseInt(allUnitElement.textContent.substring(1,allUnitElement.textContent.length-1));
-        }else{
-            thisUnit.enabled = false;
-            thisUnit.count = 0;
+        let unitIdx = 0;
+        for (let allUnitElement of allUnitsElements){
+            let thisUnit = {};
+            if(unitsEnabled[unitIdx]){
+                thisUnit.enabled = true;
+                thisUnit.count = parseInt(allUnitElement.textContent.substring(1,allUnitElement.textContent.length-1));
+            }else{
+                thisUnit.enabled = false;
+                thisUnit.count = 0;
+            }
+            thisUnit.name = allUnitElement.getAttribute("data-unit");
+            thisUnit.unitCapacity = unitCapacities[thisUnit.name];
+
+            totalCapacity += thisUnit.count * thisUnit.unitCapacity;
+            units.push(thisUnit);
+            unitIdx++;
         }
-        thisUnit.name = allUnitElement.getAttribute("data-unit");
-        thisUnit.unitCapacity = unitCapacities[thisUnit.name];
+        units.sort((a,b) => b.unitCapacity - a.unitCapacity);
 
-        totalCapacity += thisUnit.count * thisUnit.unitCapacity;
-        units.push(thisUnit);
-        unitIdx++;
+        let r = [7.5, 3, 1.5, 1];
+
+        //mission disable
+        for(let i = 0; i < 4; i++){
+            if(!availableMissions[i]){
+                r[i] = 0;
+            }
+        }
+
+        let iDiv = r[0] + r[1] + r[2] + r[3];
+        r[0] /= iDiv;
+        r[1] /= iDiv;
+        r[2] /= iDiv;
+        r[3] /= iDiv;
+
+        var desiredMissionCapacity = {
+            0: Math.round(totalCapacity * r[0]),
+            1: Math.round(totalCapacity * r[1]),
+            2: Math.round(totalCapacity * r[2]),
+            3: Math.round(totalCapacity * r[3])
+        }
+
+        var stats = {
+            ResPerRun:0,
+            ResPerHour:0,
+            RunTime:0,
+        };
+
+        var fill = (missionIdx, unit) => {
+            let allocatedUnitCount = Math.min(unit.count, Math.floor(desiredMissionCapacity[missionIdx] / unit.unitCapacity));
+            desiredMissionCapacity[missionIdx] -= allocatedUnitCount * unit.unitCapacity;
+            unit.count -= allocatedUnitCount;
+            let outputElement = document.querySelector(`#calc_output_${unit.name}_${missionIdx}`);
+            outputElement.innerText = allocatedUnitCount;
+            return allocatedUnitCount * unit.unitCapacity;
+        }
+
+        var fillMission = (missionIdx) => {
+            let result = [];
+            let totalCap = 0;
+
+            var iRes = fnGain(desiredMissionCapacity[missionIdx], [1,1,1,1], Infinity)[missionIdx];
+            var iHour = fnDuration(desiredMissionCapacity[missionIdx], [1,1,1,1], Infinity)[missionIdx];
+            var iRPH = iHour == 0 ? 0 : iRes / iHour * 60 * 60;
+
+            stats.ResPerRun += iRes;
+            stats.ResPerHour += iRPH;
+            stats.RunTime = Math.max(stats.RunTime,iHour);
+
+            for(let unit of units)
+            {
+                totalCap += fill(missionIdx, unit);
+            }
+        }
+
+        fillMission(3);
+        fillMission(2);
+        fillMission(1);
+        fillMission(0);
+
+        let resHourElement = document.querySelector(".calc-output-res-hour");
+        let resRunElement = document.querySelector(".calc-output-res-run");
+        let runTimeElement = document.querySelector(".calc-output-run-time");
+        resHourElement.innerText = `${stats.ResPerHour.toFixed(0)} (${(stats.ResPerHour/3).toFixed(0)})`;
+        resRunElement.innerText = `${stats.ResPerRun.toFixed(0)} (${(stats.ResPerRun/3).toFixed(0)})`;
+        runTimeElement.innerText = `${fnPadTime(Math.floor(stats.RunTime / 60 / 60))}:${fnPadTime(Math.floor(stats.RunTime / 60) % 60)}:${fnPadTime(Math.floor(stats.RunTime) % 60)}`;
+
+        return stats.ResPerHour;
     }
-    units.sort((a,b) => b.unitCapacity - a.unitCapacity);
-    console.log("Units:",units.slice(0));
 
-    let r = [7.5, 3, 1.5, 1];
 
-    //mission disable
     let missionsEnabled = Array.from(document.querySelectorAll(".calc-mission-enabled")).map((e)=>{return e.checked;});
-    for(let i = 0; i < 4; i++){
-        if(!missionsEnabled[i]){
-            r[i] = 0;
+    let missionMask = (missionsEnabled[3] << 3) + (missionsEnabled[2] << 2) + (missionsEnabled[1] << 1) + missionsEnabled[0];
+    let bestPerm = 0;
+    let bestPermRate = 0;
+    let donePerms = [];
+    for(let perm = 1; perm < 16; perm++)
+    {
+        let finalPerm = perm & missionMask;
+
+        if(!donePerms.includes(finalPerm) && finalPerm > 0){
+            donePerms.push(finalPerm);
+            let missionConfig = [
+                (finalPerm >> 0) & 1 == 1,
+                (finalPerm >> 1) & 1 == 1,
+                (finalPerm >> 2) & 1 == 1,
+                (finalPerm >> 3) & 1 == 1,
+            ];
+            let resourceRate = calculateUnitsMissions(missionConfig);
+            console.log(perm, finalPerm,missionConfig, resourceRate);
+            if(resourceRate > bestPermRate){
+                bestPermRate = resourceRate;
+                bestPerm = finalPerm;
+            }
         }
     }
 
-    let iDiv = r[0] + r[1] + r[2] + r[3];
-    r[0] /= iDiv;
-    r[1] /= iDiv;
-    r[2] /= iDiv;
-    r[3] /= iDiv;
-
-    var desiredMissionCapacity = {
-        0: Math.round(totalCapacity * r[0]),
-        1: Math.round(totalCapacity * r[1]),
-        2: Math.round(totalCapacity * r[2]),
-        3: Math.round(totalCapacity * r[3])
-    }
-
-    var stats = {
-        ResPerRun:0,
-        ResPerHour:0,
-        RunTime:0,
-    };
-
-    var fill = (missionIdx, unit) => {
-        let allocatedUnitCount = Math.min(unit.count, Math.floor(desiredMissionCapacity[missionIdx] / unit.unitCapacity));
-        desiredMissionCapacity[missionIdx] -= allocatedUnitCount * unit.unitCapacity;
-        unit.count -= allocatedUnitCount;
-        let outputElement = document.querySelector(`#calc_output_${unit.name}_${missionIdx}`);
-        outputElement.innerText = allocatedUnitCount;
-        return allocatedUnitCount * unit.unitCapacity;
-    }
-
-    var fillMission = (missionIdx) => {
-        let result = [];
-        let totalCap = 0;
-
-        var iRes = fnGain(desiredMissionCapacity[missionIdx], [1,1,1,1], Infinity)[missionIdx];
-        var iHour = fnDuration(desiredMissionCapacity[missionIdx], [1,1,1,1], Infinity)[missionIdx];
-        var iRPH = iHour == 0 ? 0 : iRes / iHour * 60 * 60;
-
-        stats.ResPerRun += iRes;
-        stats.ResPerHour += iRPH;
-        stats.RunTime = Math.max(stats.RunTime,iHour);
-
-        for(let unit of units)
-        {
-            totalCap += fill(missionIdx, unit);
-        }
-    }
-
-    fillMission(3);
-    fillMission(2);
-    fillMission(1);
-    fillMission(0);
-
-    console.log("Leftover Units:",units);
-    let resHourElement = document.querySelector(".calc-output-res-hour");
-    let resRunElement = document.querySelector(".calc-output-res-run");
-    let runTimeElement = document.querySelector(".calc-output-run-time");
-    resHourElement.innerText = `${stats.ResPerHour.toFixed(0)}`;
-    resRunElement.innerText = `${stats.ResPerRun.toFixed(0)}`;
-    runTimeElement.innerText = `${fnPadTime(Math.floor(stats.RunTime / 60 / 60))}:${fnPadTime(Math.floor(stats.RunTime / 60) % 60)}:${fnPadTime(Math.floor(stats.RunTime) % 60)}`;;
+    let missionConfig = [
+        (bestPerm >> 0) & 1 == 1,
+        (bestPerm >> 1) & 1 == 1,
+        (bestPerm >> 2) & 1 == 1,
+        (bestPerm >> 3) & 1 == 1,
+    ];
+    calculateUnitsMissions(missionConfig);
+    console.log("Best:", missionConfig);
 }
+   
 
-function sendScavRequest(missionIdx){
+
+
+function sendScavRequests(){
     const villageNum = (new URL(window.location)).searchParams.get("village");
     const hash = window.csrf_token;
+    let resultsElement = document.querySelector(".calc-request-results");
+    let resultStrings = [];
+    let resultNames = ["LL","HH","CC","GG"];
 
-    let unitCounts = [];
-    let totalCapacity = 0;
-    let outputElements = Array.from(document.querySelectorAll(`.calc-output-mission-${missionIdx}`)).map((e)=>{return e;});
-    for(let outputElement of outputElements){
-        let thisUnit = {};
-        thisUnit.name = outputElement.unitName;
-        thisUnit.count = parseInt(outputElement.innerText);
-        totalCapacity += thisUnit.count * unitCapacities[thisUnit.name];
-        unitCounts.push(thisUnit);
+    let updateResults = () => {
+        resultsElement.innerText = "Request Results:\n";
+        let idx = 0;
+        for(const string of resultStrings){
+            resultsElement.innerText += `${resultNames[idx]}: ${string}\n`;
+            idx++;
+        }
     }
 
-    if(totalCapacity){
-        let data = `squad_requests%5B0%5D%5Bvillage_id%5D=${villageNum}`;
+    let handleResponse = (missionIdx, response) => {
+        if(response.squad_responses[0].success){
+             resultStrings[missionIdx]="Successful";
+        }
+        else{
+            resultStrings[missionIdx]="Failed, Error: " + response.squad_responses[0].error;
+        }
+        updateResults();
+    };
 
-        for(let unit of unitCounts){
-            data += `&squad_requests%5B0%5D%5Bcandidate_squad%5D%5Bunit_counts%5D%5B${unit.name}%5D=${unit.count}`;
+    let sendMissionRequest = (missionIdx) => {
+        let unitCounts = [];
+        let totalCapacity = 0;
+        let outputElements = Array.from(document.querySelectorAll(`.calc-output-mission-${missionIdx}`)).map((e)=>{return e;});
+        for(let outputElement of outputElements){
+            let thisUnit = {};
+            thisUnit.name = outputElement.unitName;
+            thisUnit.count = parseInt(outputElement.innerText);
+            totalCapacity += thisUnit.count * unitCapacities[thisUnit.name];
+            unitCounts.push(thisUnit);
         }
 
-        data += `\
-&squad_requests%5B0%5D%5Bcandidate_squad%5D%5Bcarry_max%5D=${totalCapacity}\
-&squad_requests%5B0%5D%5Boption_id%5D=${missionIdx+1}\
-&squad_requests%5B0%5D%5Buse_premium%5D=false\
-&h=${hash}`;
+        if(totalCapacity){
+            let data = `squad_requests%5B0%5D%5Bvillage_id%5D=${villageNum}`;
 
-        var xhttp = new XMLHttpRequest();
-        xhttp.open("POST", `https://uk55.tribalwars.co.uk/game.php?village=${villageNum}&screen=scavenge_api&ajaxaction=send_squads` , false); //false == synchronous //TODO: get the api address from somewhere since the world id is currently hard coded
-        xhttp.setRequestHeader("Content-type","application/x-www-form-urlencoded");
-        xhttp.send(data);
-        //TODO: handle responce
+            for(let unit of unitCounts){
+                data += `&squad_requests%5B0%5D%5Bcandidate_squad%5D%5Bunit_counts%5D%5B${unit.name}%5D=${unit.count}`;
+            }
+
+            data += `&squad_requests%5B0%5D%5Bcandidate_squad%5D%5Bcarry_max%5D=${totalCapacity}&squad_requests%5B0%5D%5Boption_id%5D=${missionIdx+1}&squad_requests%5B0%5D%5Buse_premium%5D=false&h=${hash}`;
+
+            var xhttp = new XMLHttpRequest();
+            xhttp.open("POST", `https://uk55.tribalwars.co.uk/game.php?village=${villageNum}&screen=scavenge_api&ajaxaction=send_squads`); //TODO: get the api address from somewhere since the world id is currently hard coded
+            xhttp.setRequestHeader("Content-type","application/x-www-form-urlencoded");
+
+            xhttp.onreadystatechange = function() {
+                if (this.readyState === XMLHttpRequest.DONE && this.status === 200) {
+                    handleResponse(missionIdx, JSON.parse(xhttp.responseText));
+                }
+            }
+            xhttp.send(data);
+            resultStrings[missionIdx]="Sent";
+        }
+        else
+        {
+            resultStrings[missionIdx]="Not Sent";
+        }
     }
+
+    for(let i =0; i< 4; i++){
+        sendMissionRequest(i);
+    }
+
 }
+
+
 
 function constructTable(){
     let table = document.querySelector("#scavenge_screen table.candidate-squad-widget");
@@ -211,6 +288,12 @@ function constructTable(){
     //Construct table
     let tableBody = document.createElement("tbody");
     table.appendChild(tableBody);
+
+    //Request result
+    let requestResult = document.createElement("pre");
+    requestResult.innerText = "Request Results:";
+    requestResult.className = "calc-request-results";
+    table.parentElement.appendChild(requestResult);
 
     //table header
     let headerRow = table.firstChild.firstChild.cloneNode(true)
@@ -300,7 +383,7 @@ function constructTable(){
     genButCol.appendChild(genButton);
     genButton.innerText = "Generate";
     genButton.addEventListener("click",()=>{
-        mainFunc();
+        calculateUnits();
     });
 
     //Gen & Send Button
@@ -312,11 +395,8 @@ function constructTable(){
     genSendButCol.appendChild(genSendBut);
     genSendBut.innerText = "Generate & Send";
     genSendBut.addEventListener("click",()=>{
-        mainFunc();
-        for(let i =0; i< 4; i++){
-            sendScavRequest(i);
-        }
-
+        calculateUnits();
+        sendScavRequests();
     });
 
     //Totals Outputs
