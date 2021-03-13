@@ -1,8 +1,13 @@
 # TWScavengeCalculator
-### Tribal Wars Aproval Pending (use at your own risk)
 TWScavengeCalculator is a user script that provides a convient calculator for calculating unit numbers for scavenging and dispatching missions within the Tribal Wars browser game.
 
-## Installation
+## Installation As a Tribal Wars Script
+1. Within Tribal Wars, navigate to the quick bar settings page.
+2. Add a new link. 
+3. Set Target-URL to "javascript: $.getScript('https://cdn.jsdelivr.net/gh/Kitsee/TWScavengeCalculator/TWScavengeCalculator.user.js')" (without the quotes)
+3. Set the other options to whatever you want.
+
+## Installation As a User Script
 Many browsers support user scripts directly, such browsers will usally offer to install a user script when the script is viewed in browser.
 The script can be accessed directly via this address:
 https://github.com/Kitsee/TWScavengeCalculator/raw/master/TWScavengeCalculator.user.js
