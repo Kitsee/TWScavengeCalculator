@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kits's Scavenge Calculator
 // @description  Provides an in-game calculator utility for scavenging within the Tribal Wars online game. Credit for some of the code and most of the maths goes to Daniel Van Den Berg (daniel.dmvandenberg.nl)
-// @version      1.0.1
+// @version      1.0.2
 // @author       Kits (Github: Kitsee)
 // @grant        none
 // @updateURL    https://github.com/Kitsee/TWScavengeCalculator/raw/master/TWScavengeCalculator.user.js
@@ -42,29 +42,6 @@ function doMakePersistentInput(eInput) {
     });
     eInput.doRestore();
 }
-
-function fnGain(iCap, r, iMaxDuration) {
-    return {
-        0:Math.round(r[0] * iCap * 0.10),
-        1:Math.round(r[1] * iCap * 0.25),
-        2:Math.round(r[2] * iCap * 0.50),
-        3:Math.round(r[3] * iCap * 0.75)
-    };
-}
-
-function fnDuration(iCap, r, iMaxDuration) {
-    const worldSpeed = 1; //TODO: i shouldnt be hard coded
-    let durationFactor = Math.pow(worldSpeed * 1, -0.55);
-
-    return {
-        0:r[0] == 0 ? 0 : ((Math.pow(Math.pow(r[0] * iCap, 2) * 100 * Math.pow(0.10, 2), 0.45) + 1800) * durationFactor),
-        1:r[1] == 0 ? 0 : ((Math.pow(Math.pow(r[1] * iCap, 2) * 100 * Math.pow(0.25, 2), 0.45) + 1800) * durationFactor),
-        2:r[2] == 0 ? 0 : ((Math.pow(Math.pow(r[2] * iCap, 2) * 100 * Math.pow(0.50, 2), 0.45) + 1800) * durationFactor),
-        3:r[3] == 0 ? 0 : ((Math.pow(Math.pow(r[3] * iCap, 2) * 100 * Math.pow(0.75, 2), 0.45) + 1800) * durationFactor)
-    };
-}
-
-
 
 function calculateUnits(){
     let calculateUnitsMissions = (availableMissions) => {
@@ -129,17 +106,18 @@ function calculateUnits(){
             return allocatedUnitCount * unit.unitCapacity;
         }
 
-        var fillMission = (missionIdx) => {
+        var fillMission = (missionIdx, missionCapReturn) => {
             let result = [];
             let totalCap = 0;
 
-            var iRes = fnGain(desiredMissionCapacity[missionIdx], [1,1,1,1], Infinity)[missionIdx];
-            var iHour = fnDuration(desiredMissionCapacity[missionIdx], [1,1,1,1], Infinity)[missionIdx];
-            var iRPH = iHour == 0 ? 0 : iRes / iHour * 60 * 60;
+            let durationFactor = Math.pow(window.TribalWars.worldSpeed, -0.55);
+            var resources = Math.round(desiredMissionCapacity[missionIdx] * missionCapReturn);
+            var runTime = (Math.pow(Math.pow(desiredMissionCapacity[missionIdx], 2) * 100 * Math.pow(missionCapReturn, 2), 0.45) + 1800) * durationFactor;
+            var RPH = runTime == 0 ? 0 : resources / runTime * 60 * 60;
 
-            stats.ResPerRun += iRes;
-            stats.ResPerHour += iRPH;
-            stats.RunTime = Math.max(stats.RunTime,iHour);
+            stats.ResPerRun += resources;
+            stats.ResPerHour += RPH;
+            stats.RunTime = Math.max(stats.RunTime,runTime);
 
             for(let unit of units)
             {
@@ -147,10 +125,10 @@ function calculateUnits(){
             }
         }
 
-        fillMission(3);
-        fillMission(2);
-        fillMission(1);
-        fillMission(0);
+        fillMission(3, 0.75);
+        fillMission(2, 0.50);
+        fillMission(1, 0.25);
+        fillMission(0, 0.10);
 
         let fnPadTime = (num) => {
             var s = "0" + num;
@@ -434,5 +412,18 @@ function constructTable(){
     'use strict';
     await new Promise(resolve => setTimeout(resolve, 800)); //allow the page to load.
 
-    constructTable();
+    const world = window.TribalWars.getGameData().world;
+    var xhttp = new XMLHttpRequest();
+    xhttp.open("GET", `https://${world}.tribalwars.co.uk/interface.php?func=get_config`);
+    xhttp.onreadystatechange = function() {
+        if (this.readyState === XMLHttpRequest.DONE && this.status === 200) {
+            let parser = new DOMParser();
+            let xmlDoc = parser.parseFromString(xhttp.responseText,"text/xml");
+            window.TribalWars.worldSpeed = xmlDoc.querySelector("config speed").innerHTML * 1;
+            console.log("World Speed:", window.TribalWars.worldSpeed);
+
+            constructTable();
+        }
+    }
+    xhttp.send();
 })();
