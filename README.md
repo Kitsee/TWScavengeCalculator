@@ -1,5 +1,5 @@
 # TWScavengeCalculator
-### Tribal Wars Aproval Pending (use at your own risk)
+### Tribal Wars Approval Pending (use at your own risk)
 TWScavengeCalculator is a user script that provides a convient calculator for calculating unit numbers for scavenging and dispatching missions within the Tribal Wars browser game.
 
 ## Installation
