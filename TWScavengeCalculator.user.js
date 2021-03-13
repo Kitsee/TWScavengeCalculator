@@ -1,11 +1,10 @@
 // ==UserScript==
 // @name         Kits's Scavenge Calculator
 // @description  Provides an in-game calculator utility for scavenging within the Tribal Wars online game. Credit for some of the code and most of the maths goes to Daniel Van Den Berg (daniel.dmvandenberg.nl)
-// @version      0.0.3
+// @version      0.0.4
 // @author       Kits (Github: Kitsee)
 // @grant        none
 // @include      https://*.tribalwars.*/game.php?*screen=place*mode=scavenge*
-
 // ==/UserScript==
 
 let unitCapacities = {
@@ -62,10 +61,7 @@ function fnDuration(iCap, r, iMaxDuration) {
     };
 }
 
-function fnPadTime(num) {
-    var s = "0" + num;
-    return s.substr(s.length-2);
-}
+
 
 function calculateUnits(){
     let calculateUnitsMissions = (availableMissions) => {
@@ -153,6 +149,11 @@ function calculateUnits(){
         fillMission(1);
         fillMission(0);
 
+        let fnPadTime = (num) => {
+            var s = "0" + num;
+            return s.substr(s.length-2);
+        }
+
         let resHourElement = document.querySelector(".calc-output-res-hour");
         let resRunElement = document.querySelector(".calc-output-res-run");
         let runTimeElement = document.querySelector(".calc-output-run-time");
@@ -204,11 +205,15 @@ function calculateUnits(){
 
 
 function sendScavRequests(){
-    const villageNum = (new URL(window.location)).searchParams.get("village");
-    const hash = window.csrf_token;
-    let resultsElement = document.querySelector(".calc-request-results");
+    const gameData = window.TribalWars.getGameData();
+    const hash = gameData.csrf;
+    const world = gameData.world;
+    const villageId = gameData.village.id;
+    
+    const resultsElement = document.querySelector(".calc-request-results");
+    const resultNames = ["LL","HH","CC","GG"];
+
     let resultStrings = [];
-    let resultNames = ["LL","HH","CC","GG"];
 
     let updateResults = () => {
         resultsElement.innerText = "Request Results:\n";
@@ -233,6 +238,7 @@ function sendScavRequests(){
         let unitCounts = [];
         let totalCapacity = 0;
         let outputElements = Array.from(document.querySelectorAll(`.calc-output-mission-${missionIdx}`)).map((e)=>{return e;});
+
         for(let outputElement of outputElements){
             let thisUnit = {};
             thisUnit.name = outputElement.unitName;
@@ -242,7 +248,7 @@ function sendScavRequests(){
         }
 
         if(totalCapacity){
-            let data = `squad_requests%5B0%5D%5Bvillage_id%5D=${villageNum}`;
+            let data = `squad_requests%5B0%5D%5Bvillage_id%5D=${villageId}`;
 
             for(let unit of unitCounts){
                 data += `&squad_requests%5B0%5D%5Bcandidate_squad%5D%5Bunit_counts%5D%5B${unit.name}%5D=${unit.count}`;
@@ -251,7 +257,7 @@ function sendScavRequests(){
             data += `&squad_requests%5B0%5D%5Bcandidate_squad%5D%5Bcarry_max%5D=${totalCapacity}&squad_requests%5B0%5D%5Boption_id%5D=${missionIdx+1}&squad_requests%5B0%5D%5Buse_premium%5D=false&h=${hash}`;
 
             var xhttp = new XMLHttpRequest();
-            xhttp.open("POST", `https://uk55.tribalwars.co.uk/game.php?village=${villageNum}&screen=scavenge_api&ajaxaction=send_squads`); //TODO: get the api address from somewhere since the world id is currently hard coded
+            xhttp.open("POST", `https://${world}.tribalwars.co.uk/game.php?village=${villageId}&screen=scavenge_api&ajaxaction=send_squads`);
             xhttp.setRequestHeader("Content-type","application/x-www-form-urlencoded");
 
             xhttp.onreadystatechange = function() {
@@ -271,7 +277,6 @@ function sendScavRequests(){
     for(let i =0; i< 4; i++){
         sendMissionRequest(i);
     }
-
 }
 
 
