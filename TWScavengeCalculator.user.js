@@ -1,9 +1,12 @@
 // ==UserScript==
 // @name         Kits's Scavenge Calculator
 // @description  Provides an in-game calculator utility for scavenging within the Tribal Wars online game. Credit for some of the code and most of the maths goes to Daniel Van Den Berg (daniel.dmvandenberg.nl)
-// @version      0.0.4
+// @version      1.0.0
 // @author       Kits (Github: Kitsee)
 // @grant        none
+// @updateURL    https://github.com/Kitsee/TWScavengeCalculator/raw/master/TWScavengeCalculator.user.js
+// @downloadURL  https://github.com/Kitsee/TWScavengeCalculator/raw/master/TWScavengeCalculator.user.js
+// @supportURL   https://github.com/Kitsee/TWScavengeCalculator/issues
 // @include      https://*.tribalwars.*/game.php?*screen=place*mode=scavenge*
 // ==/UserScript==
 
