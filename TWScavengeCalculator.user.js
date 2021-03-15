@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kits's Scavenge Calculator
 // @description  Provides an in-game calculator utility for scavenging within the Tribal Wars online game. Credit for some of the code and most of the maths goes to Daniel Van Den Berg (daniel.dmvandenberg.nl)
-// @version      1.0.2
+// @version      1.1.0
 // @author       Kits (Github: Kitsee)
 // @grant        none
 // @updateURL    https://github.com/Kitsee/TWScavengeCalculator/raw/master/TWScavengeCalculator.user.js
@@ -9,6 +9,8 @@
 // @supportURL   https://github.com/Kitsee/TWScavengeCalculator/issues
 // @include      https://*.tribalwars.*/game.php?*screen=place*mode=scavenge*
 // ==/UserScript==
+
+'use strict';
 
 let unitCapacities = {
     spear: 25,
@@ -21,26 +23,181 @@ let unitCapacities = {
     knight: 100
 }
 
-function doMakePersistentInput(eInput) {
-    if (!eInput.id){
-        console.warn(`doMakePersistentInput called on element without id.`, eInput);
-        debugger;
-        return;
+function main()
+{
+    if (window.location.href.indexOf('screen=place&mode=scavenge') < 0) {
+        window.location.assign(game_data.link_base_pure + "place&mode=scavenge");
     }
-    let sStoredState = window.localStorage[`persistent_input_${eInput.id}`];
-    eInput.setValue = (sInput)=>{ window.localStorage[`persistent_input_${eInput.id}`] = sInput;};
-    eInput.doRestore = ()=>{eInput.value = sStoredState;};
-    eInput.getValue = ()=>{return eInput.value;};
-    switch (eInput.type){
-        case "checkbox":
-            eInput.doRestore = ()=>{eInput.checked = sStoredState == "true" ? true : false;};
-            eInput.getValue = ()=>{return eInput.checked;};
-            break;
+
+
+    var xhttp = new XMLHttpRequest();
+    xhttp.open("GET", `https://${game_data.world}.tribalwars.co.uk/interface.php?func=get_config`);
+    xhttp.onreadystatechange = function() {
+        if (this.readyState === XMLHttpRequest.DONE && this.status === 200) {
+            let xmlDoc = (new DOMParser()).parseFromString(xhttp.responseText,"text/xml");
+
+            window.TribalWars.worldSpeed = xmlDoc.querySelector("config speed").innerHTML * 1;
+            console.log("World Speed:", window.TribalWars.worldSpeed);
+
+            constructInterface();
+            //constructTable();
+        }
     }
-    eInput.addEventListener("change",(e)=>{
-        eInput.setValue(e.target.getValue());
+    xhttp.send();
+}
+
+function constructInterface(){
+    let mainTable = document.querySelector("#contentContainer");
+    let contentRoot = null;
+    if(mainTable){
+        //Desktop Mode
+        let mainTableBody = mainTable.childNodes[1];
+        mainTable.style["border-spacing"] = "10px";
+        mainTable.style["border-collapse"] = "separate";
+
+        let tr = document.createElement("tr");
+        tr.id = "scavenge_calculator";
+        mainTableBody.insertBefore(tr, mainTableBody.childNodes[0]);
+
+        let td = document.createElement("td");
+        td.id = "content_value";
+        td.className = "content-border calc-root";
+        tr.appendChild(td);
+        contentRoot = td;
+    }
+    else{
+        //Mobile Mode
+        let mobileRoot = document.querySelector("#mobileContent");
+        let stdContent = document.querySelector("#content_value");
+
+        contentRoot = document.createElement("div");
+        mobileRoot.insertBefore(contentRoot,stdContent);
+
+    }
+
+    const html = `\
+<h3>Scavenging Calculator</h3>\
+<div class="candidate-squad-container">\
+    <table class="candidate-squad-widget vis" style="width: 490px">\
+        <tbody id="calcTableBody">\
+            <tr>\
+                 <th></th>\
+                 <th>Enable</th>\
+                 <th>Available</th>\
+                 <th>LL</th>\
+                 <th>HH</th>\
+                 <th>CC</th>\
+                 <th>GG</th>\
+            </tr>\
+            <tr>\
+                 <th>Mission Enable</th>\
+                 <td></td>\
+                 <td></td>\
+                 <td>\
+                     <input type="checkbox" id="calc_mission_enabled_0" class="calc-mission-enabled input-persist">
+                 </td>\
+                 <td>\
+                     <input type="checkbox" id="calc_mission_enabled_1" class="calc-mission-enabled input-persist">
+                 </td>\
+                 <td>\
+                     <input type="checkbox" id="calc_mission_enabled_2" class="calc-mission-enabled input-persist">
+                 </td>\
+                 <td>\
+                     <input type="checkbox" id="calc_mission_enabled_3" class="calc-mission-enabled input-persist">
+                 </td>\
+            </tr>\
+        </tbody>\
+    </table>
+</div>\
+`;
+    contentRoot.insertAdjacentHTML( 'beforeend', html );
+
+    const tableBody = document.querySelector("#calcTableBody");
+    const unitNames = Array.from(document.querySelectorAll(".unit_link")).map((e)=>{return e.getAttribute("data-unit");});
+    const unitCounts = Array.from(document.querySelectorAll(".units-entry-all")).reduce((a,e) => ({...a, [e.getAttribute("data-unit")]:parseInt(e.textContent.substring(1,e.textContent.length-1))}), {});
+    console.log("Unit Names", unitNames);
+    console.log("Unit Counts", unitCounts);
+
+    for (let unitName of unitNames){
+        const html = `\
+<tr>\
+    <th>
+        <a href="#" class="" data-unit="${unitName}">
+            <img src="https://dsuk.innogamescdn.com/asset/27dd28b8/graphic/unit/unit_${unitName}.png" style="text-align:center;">
+            <a>  ${unitName}</a>
+        </a>
+    </th>
+    <td>\
+        <input type="checkbox" id="calc_unit_enabled_${unitName}" class="calc-unit-enabled input-persist">
+    </td>\
+    <td>\
+        <a id="calc_unit_available_${unitName}" class="calc-unit-available">${unitCounts[unitName]}
+    </td>\
+    <td>\
+        <a id="calc_output_${unitName}_0" class="calc-output-mission-0" unitname="${unitName}">0
+    </td>\
+    <td>\
+        <a id="calc_output_${unitName}_1" class="calc-output-mission-1" unitname="${unitName}">0
+    </td>\
+    <td>\
+        <a id="calc_output_${unitName}_2" class="calc-output-mission-2" unitname="${unitName}">0
+    </td>\
+    <td>\
+        <a id="calc_output_${unitName}_3" class="calc-output-mission-3" unitname="${unitName}">0
+    </td>\
+</tr>\
+`
+        tableBody.insertAdjacentHTML( 'beforeend', html );
+    }
+
+    const html2 = `\
+<tr>\
+    <th>
+        <a>Res/Hour</a>
+    </th>
+    <td colspan="2">\
+        <a class="calc-output-res-hour">0</a>
+    </td>\
+</tr>\
+<tr>\
+    <th>
+        <a>Res/Run</a>
+    </th>
+    <td colspan="2">\
+        <a class="calc-output-res-run">0</a>
+    </td>\
+</tr>\
+<tr>\
+    <th>
+        <a>Run Time</a>
+    </th>
+    <td colspan="2" >\
+        <a class="calc-output-run-time">0</a>
+    </td>\
+</tr>\
+`
+    tableBody.insertAdjacentHTML( 'beforeend', html2 );
+
+    const html3 = `\
+<a href="#" id="calc_button_calculate" class="btn">Calculate</a>\
+<a href="#" id="calc_button_calculateSend" class="btn">Calculate & Send</a>\
+<pre class="calc-request-results"> </pre>
+`
+    contentRoot.insertAdjacentHTML( 'beforeend', html3 );
+
+    document.querySelector("#calc_button_calculate").addEventListener("click",()=>{
+        calculateUnits();
     });
-    eInput.doRestore();
+
+    document.querySelector("#calc_button_calculateSend").addEventListener("click",()=>{
+        calculateUnits();
+        sendScavRequests();
+    });
+
+    const inputs = Array.from(document.querySelectorAll(".input-persist"));
+    for(let input of inputs){
+         doMakePersistentInput(input);
+    }
 }
 
 function calculateUnits(){
@@ -223,12 +380,12 @@ function sendScavRequests(){
 
         for(let outputElement of outputElements){
             let thisUnit = {};
-            thisUnit.name = outputElement.unitName;
+            thisUnit.name = outputElement.getAttribute("unitname");
             thisUnit.count = parseInt(outputElement.innerText);
             totalCapacity += thisUnit.count * unitCapacities[thisUnit.name];
             unitCounts.push(thisUnit);
-        }
 
+        }
         if(totalCapacity){
             let data = `squad_requests%5B0%5D%5Bvillage_id%5D=${villageId}`;
 
@@ -256,174 +413,39 @@ function sendScavRequests(){
         }
     }
 
+
     for(let i =0; i< 4; i++){
         sendMissionRequest(i);
     }
+    updateResults();
 }
 
 
 
-function constructTable(){
-    let table = document.querySelector("#scavenge_screen table.candidate-squad-widget");
 
-    //add padding to existing table
-    let paddingCol = document.createElement("td");
-    paddingCol.colSpan = 2;
-    table.firstChild.childNodes[0].insertBefore(paddingCol,table.firstChild.childNodes[0].firstChild);
-    table.firstChild.childNodes[1].insertBefore(paddingCol.cloneNode(true),table.firstChild.childNodes[1].firstChild);
 
-    //Construct table
-    let tableBody = document.createElement("tbody");
-    table.appendChild(tableBody);
-
-    //Request result
-    let requestResult = document.createElement("pre");
-    requestResult.innerText = " ";
-    requestResult.className = "calc-request-results";
-    table.parentElement.appendChild(requestResult);
-
-    //table header
-    let headerRow = table.firstChild.firstChild.cloneNode(true)
-    headerRow.removeChild(headerRow.lastChild);
-    headerRow.lastChild.colSpan = 3;
-    headerRow.lastChild.innerText = " ";
-    for(let colHeader of headerRow.childNodes){
-        if(colHeader.firstChild != null){
-            colHeader.firstChild.className = ""; //remove the "unit_link" class from the new header
-        }
+function doMakePersistentInput(eInput) {
+    if (!eInput.id){
+        console.warn(`doMakePersistentInput called on element without id.`, eInput);
+        debugger;
+        return;
     }
-    tableBody.appendChild(headerRow);
-
-    //rows
-    let tableRows = [];
-    for(let i = 0; i < 5; i++){
-        let row = document.createElement("tr");
-        tableBody.appendChild(row);
-        tableRows[i] = row;
+    let sStoredState = window.localStorage[`persistent_input_${eInput.id}`];
+    eInput.setValue = (sInput)=>{ window.localStorage[`persistent_input_${eInput.id}`] = sInput;};
+    eInput.doRestore = ()=>{eInput.value = sStoredState;};
+    eInput.getValue = ()=>{return eInput.value;};
+    switch (eInput.type){
+        case "checkbox":
+            eInput.doRestore = ()=>{eInput.checked = sStoredState == "true" ? true : false;};
+            eInput.getValue = ()=>{return eInput.checked;};
+            break;
     }
-
-    //Misson Name & Enabled column
-    let missonNames = [null,"LL","HH","CC","GG"];
-    for(let i = 0; i < 5; i++){
-        let col = document.createElement("td");
-        tableRows[i].appendChild(col);
-
-        if(missonNames[i] != null){
-            let rowHeader = document.createElement("th");
-            rowHeader.innerText = missonNames[i];
-            col.appendChild(rowHeader);
-
-            let col2 = document.createElement("td");
-            tableRows[i].appendChild(col2);
-
-            let chkCheckbox = document.createElement("input");
-            chkCheckbox.type = "checkbox";
-            chkCheckbox.className = "calc-mission-enabled";
-            chkCheckbox.id = `calc_mission_enabled_${i-1}`;
-            doMakePersistentInput(chkCheckbox);
-            col2.appendChild(chkCheckbox);
-        }
-        else{
-            col.colSpan = 2;
-        }
-    }
-
-
-    //unit columns
-    let unitNames = Array.from(document.querySelectorAll(".unit_link")).map((e)=>{return e.getAttribute("data-unit");});
-    console.log("Unit Names",unitNames);
-    for (let unitName of unitNames){
-
-        //unit enable checkbox
-        let eCol = document.createElement("td");
-        tableRows[0].appendChild(eCol);
-
-        let chkCheckbox = document.createElement("input");
-        eCol.appendChild(chkCheckbox);
-        chkCheckbox.type = "checkbox";
-        chkCheckbox.className = "calc-unit-enabled";
-        chkCheckbox.unitName = unitName;
-        chkCheckbox.id = `calc_unit_enabled_${unitName}`;
-        doMakePersistentInput(chkCheckbox);
-
-        //output fields
-        for(let i = 0; i < 4; i++){
-            let col = document.createElement("td");
-            tableRows[i+1].appendChild(col);
-
-            let output = document.createElement("a");
-            col.appendChild(output);
-            output.className = `calc-output-mission-${i}`;
-            output.id = `calc_output_${unitName}_${i}`;
-            output.unitName = unitName;
-            output.innerText = "0";
-        }
-    }
-
-    //Command Buttons
-    //Generate Numbers Button
-    let genButCol = document.createElement("td");
-    tableRows[3].appendChild(genButCol);
-    genButCol.colSpan = 2;
-
-    let genButton = document.createElement("a");
-    genButCol.appendChild(genButton);
-    genButton.innerText = "Generate";
-    genButton.addEventListener("click",()=>{
-        calculateUnits();
+    eInput.addEventListener("change",(e)=>{
+        eInput.setValue(e.target.getValue());
     });
-
-    //Gen & Send Button
-    let genSendButCol = document.createElement("td");
-    tableRows[4].appendChild(genSendButCol);
-    genSendButCol.colSpan = 2;
-
-    let genSendBut = document.createElement("a");
-    genSendButCol.appendChild(genSendBut);
-    genSendBut.innerText = "Generate & Send";
-    genSendBut.addEventListener("click",()=>{
-        calculateUnits();
-        sendScavRequests();
-    });
-
-    //Totals Outputs
-    let totalsSettings = [
-        {text:"Res/Hour:", class:"calc-output-res-hour"},
-        {text:"Res/Run:", class:"calc-output-res-run"},
-        {text:"Run Time:", class:"calc-output-run-time"},
-        ];
-    let rowIdx = 0;
-    for(let thisSettings of totalsSettings){
-        let titleCol = document.createElement("td");
-        titleCol.innerText = thisSettings.text;
-        tableRows[rowIdx].appendChild(titleCol);
-
-        let valueCol = document.createElement("td");
-        valueCol.className = thisSettings.class;
-        tableRows[rowIdx].appendChild(valueCol);
-
-        rowIdx++;
-    }
+    eInput.doRestore();
 }
 
 
-// MAIN
-(async function() {
-    'use strict';
-    await new Promise(resolve => setTimeout(resolve, 800)); //allow the page to load.
+main();
 
-    const world = window.TribalWars.getGameData().world;
-    var xhttp = new XMLHttpRequest();
-    xhttp.open("GET", `https://${world}.tribalwars.co.uk/interface.php?func=get_config`);
-    xhttp.onreadystatechange = function() {
-        if (this.readyState === XMLHttpRequest.DONE && this.status === 200) {
-            let parser = new DOMParser();
-            let xmlDoc = parser.parseFromString(xhttp.responseText,"text/xml");
-            window.TribalWars.worldSpeed = xmlDoc.querySelector("config speed").innerHTML * 1;
-            console.log("World Speed:", window.TribalWars.worldSpeed);
-
-            constructTable();
-        }
-    }
-    xhttp.send();
-})();
