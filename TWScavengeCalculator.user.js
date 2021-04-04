@@ -304,7 +304,12 @@ function calculateUnits(){
 
 
     let missionsEnabled = Array.from(document.querySelectorAll(".calc-mission-enabled")).map((e)=>{return e.checked;});
+    let missionsAvailable = Array.from(document.querySelectorAll(".status-specific")).map((e)=>{return e.children[0].className == "inactive-view";});
+    console.log("Missions Available:", missionsAvailable);
+
     let missionMask = (missionsEnabled[3] << 3) + (missionsEnabled[2] << 2) + (missionsEnabled[1] << 1) + missionsEnabled[0];
+    let availableMask = (missionsAvailable[3] << 3) + (missionsAvailable[2] << 2) + (missionsAvailable[1] << 1) + missionsAvailable[0];
+    missionMask &= availableMask;
     let bestPerm = 0;
     let bestPermRate = 0;
     let donePerms = [];
@@ -448,4 +453,3 @@ function doMakePersistentInput(eInput) {
 
 
 main();
-
