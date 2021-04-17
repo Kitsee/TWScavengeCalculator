@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kits's Scavenge Calculator
 // @description  Provides an in-game calculator utility for scavenging within the Tribal Wars online game. Credit for some of the code and most of the maths goes to Daniel Van Den Berg (daniel.dmvandenberg.nl)
-// @version      1.1.1
+// @version      1.2.0
 // @author       Kits (Github: Kitsee)
 // @grant        none
 // @updateURL    https://github.com/Kitsee/TWScavengeCalculator/raw/master/TWScavengeCalculator.user.js
@@ -28,22 +28,23 @@ function main()
     if (window.location.href.indexOf('screen=place&mode=scavenge') < 0) {
         window.location.assign(game_data.link_base_pure + "place&mode=scavenge");
     }
+    else
+    {
+        var xhttp = new XMLHttpRequest();
+        xhttp.open("GET", `https://${game_data.world}.tribalwars.co.uk/interface.php?func=get_config`);
+        xhttp.onreadystatechange = function() {
+            if (this.readyState === XMLHttpRequest.DONE && this.status === 200) {
+                let xmlDoc = (new DOMParser()).parseFromString(xhttp.responseText,"text/xml");
 
+                window.TribalWars.worldSpeed = xmlDoc.querySelector("config speed").innerHTML * 1;
+                console.log("World Speed:", window.TribalWars.worldSpeed);
 
-    var xhttp = new XMLHttpRequest();
-    xhttp.open("GET", `https://${game_data.world}.tribalwars.co.uk/interface.php?func=get_config`);
-    xhttp.onreadystatechange = function() {
-        if (this.readyState === XMLHttpRequest.DONE && this.status === 200) {
-            let xmlDoc = (new DOMParser()).parseFromString(xhttp.responseText,"text/xml");
-
-            window.TribalWars.worldSpeed = xmlDoc.querySelector("config speed").innerHTML * 1;
-            console.log("World Speed:", window.TribalWars.worldSpeed);
-
-            constructInterface();
-            //constructTable();
+                constructInterface();
+                //constructTable();
+            }
         }
+        xhttp.send();
     }
-    xhttp.send();
 }
 
 function constructInterface(){
@@ -81,7 +82,7 @@ function constructInterface(){
     <table class="candidate-squad-widget vis" style="width: 490px">\
         <tbody id="calcTableBody">\
             <tr>\
-                 <th></th>\
+                 <th style="width:80px"></th>\
                  <th>Enable</th>\
                  <th>Available</th>\
                  <th>LL</th>\
@@ -175,6 +176,35 @@ function constructInterface(){
         <a class="calc-output-run-time">0</a>
     </td>\
 </tr>\
+<tr>\
+    <th>
+        <a>Time Limit</a>
+    </th>
+    <td colspan="2" >\
+        <select id="cal_time_limit">\
+            <option value="15">15 Mins</option>\
+            <option value="30">30 Mins</option>\
+            <option value="45">45 Mins</option>\
+            <option value="60">1 Hour</option>\
+            <option value="90">1.5 Hours</option>\
+            <option value="120">2 Hours</option>\
+            <option value="180">3 Hours</option>\
+            <option value="240">4 Hours</option>\
+            <option value="300">5 Hours</option>\
+            <option value="360">6 Hours</option>\
+            <option value="420">7 Hours</option>\
+            <option value="480">8 Hours</option>\
+            <option value="540">9 Hours</option>\
+            <option value="600">10 Hours</option>\
+            <option value="720">12 Hours</option>\
+            <option value="840">14 Hours</option>\
+            <option value="960">16 Hours</option>\
+            <option value="1080">18 Hours</option>\
+            <option value="1200">20 Hours</option>\
+            <option value="-1" selected="1">Unlimited</option>\
+        </select>\
+    </td>\
+</tr>\
 `
     tableBody.insertAdjacentHTML( 'beforeend', html2 );
 
@@ -201,11 +231,21 @@ function constructInterface(){
 }
 
 function calculateUnits(){
+    let unitsEnabled = Array.from(document.querySelectorAll(".calc-unit-enabled")).map((e)=>{return e.checked;});
+    let allUnitsElements = Array.from(document.querySelectorAll(".units-entry-all")).map((e)=>{return e;});
+    let time_limit = parseInt(document.querySelector(`#cal_time_limit`).value);
+    console.log("time limit:", time_limit);
+    if(time_limit == -1){
+        time_limit = Infinity;
+    }
+    else{
+        time_limit = time_limit * 60;
+    }
+    let durationFactor = Math.pow(window.TribalWars.worldSpeed, -0.55);
+
     let calculateUnitsMissions = (availableMissions) => {
         let units = [];
         let totalCapacity = 0;
-        let allUnitsElements = Array.from(document.querySelectorAll(".units-entry-all")).map((e)=>{return e;});
-        let unitsEnabled = Array.from(document.querySelectorAll(".calc-unit-enabled")).map((e)=>{return e.checked;});
 
         let unitIdx = 0;
         for (let allUnitElement of allUnitsElements){
@@ -241,11 +281,21 @@ function calculateUnits(){
         r[2] /= iDiv;
         r[3] /= iDiv;
 
+        var maxMissionCapacity = {0:Infinity,1:Infinity,2:Infinity,3:Infinity};;
+        if(time_limit != Infinity){
+            maxMissionCapacity = {
+                0:r[0] == 0 ? 0 : Math.pow(Math.pow((time_limit / durationFactor) - 1800,1/0.45)/Math.pow(0.10, 2)/100,1/2),
+                1:r[1] == 0 ? 0 : Math.pow(Math.pow((time_limit / durationFactor) - 1800,1/0.45)/Math.pow(0.25, 2)/100,1/2),
+                2:r[2] == 0 ? 0 : Math.pow(Math.pow((time_limit / durationFactor) - 1800,1/0.45)/Math.pow(0.50, 2)/100,1/2),
+                3:r[3] == 0 ? 0 : Math.pow(Math.pow((time_limit / durationFactor) - 1800,1/0.45)/Math.pow(0.75, 2)/100,1/2)
+            };
+        }
+
         var desiredMissionCapacity = {
-            0: Math.round(totalCapacity * r[0]),
-            1: Math.round(totalCapacity * r[1]),
-            2: Math.round(totalCapacity * r[2]),
-            3: Math.round(totalCapacity * r[3])
+            0: Math.round( Math.min(totalCapacity * r[0], maxMissionCapacity[0] )),
+            1: Math.round( Math.min(totalCapacity * r[1], maxMissionCapacity[1] )),
+            2: Math.round( Math.min(totalCapacity * r[2], maxMissionCapacity[2] )),
+            3: Math.round( Math.min(totalCapacity * r[3], maxMissionCapacity[3] ))
         }
 
         var stats = {
@@ -267,7 +317,6 @@ function calculateUnits(){
             let result = [];
             let totalCap = 0;
 
-            let durationFactor = Math.pow(window.TribalWars.worldSpeed, -0.55);
             var resources = Math.round(desiredMissionCapacity[missionIdx] * missionCapReturn);
             var runTime = (Math.pow(Math.pow(desiredMissionCapacity[missionIdx], 2) * 100 * Math.pow(missionCapReturn, 2), 0.45) + 1800) * durationFactor;
             var RPH = runTime == 0 ? 0 : resources / runTime * 60 * 60;
@@ -453,3 +502,4 @@ function doMakePersistentInput(eInput) {
 
 
 main();
+
