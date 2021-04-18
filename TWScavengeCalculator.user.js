@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kits's Scavenge Calculator
 // @description  Provides an in-game calculator utility for scavenging within the Tribal Wars online game. Credit for some of the code and most of the maths goes to Daniel Van Den Berg (daniel.dmvandenberg.nl)
-// @version      1.2.0
+// @version      1.2.1
 // @author       Kits (Github: Kitsee)
 // @grant        none
 // @updateURL    https://github.com/Kitsee/TWScavengeCalculator/raw/master/TWScavengeCalculator.user.js
@@ -181,7 +181,7 @@ function constructInterface(){
         <a>Time Limit</a>
     </th>
     <td colspan="2" >\
-        <select id="cal_time_limit">\
+        <select id="calc_time_limit" class="input-persist">\
             <option value="15">15 Mins</option>\
             <option value="30">30 Mins</option>\
             <option value="45">45 Mins</option>\
@@ -201,7 +201,7 @@ function constructInterface(){
             <option value="960">16 Hours</option>\
             <option value="1080">18 Hours</option>\
             <option value="1200">20 Hours</option>\
-            <option value="-1" selected="1">Unlimited</option>\
+            <option value="0" selected="1">Unlimited</option>\
         </select>\
     </td>\
 </tr>\
@@ -233,9 +233,9 @@ function constructInterface(){
 function calculateUnits(){
     let unitsEnabled = Array.from(document.querySelectorAll(".calc-unit-enabled")).map((e)=>{return e.checked;});
     let allUnitsElements = Array.from(document.querySelectorAll(".units-entry-all")).map((e)=>{return e;});
-    let time_limit = parseInt(document.querySelector(`#cal_time_limit`).value);
+    let time_limit = parseInt(document.querySelector(`#calc_time_limit`).value);
     console.log("time limit:", time_limit);
-    if(time_limit == -1){
+    if(time_limit == 0){
         time_limit = Infinity;
     }
     else{
