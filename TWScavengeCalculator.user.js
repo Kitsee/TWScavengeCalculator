@@ -237,7 +237,7 @@ function constructInterface(){
 
     const inputs = Array.from(document.querySelectorAll(".input-persist"));
     for(let input of inputs){
-         MakePersistentInput(input);
+         makePersistentInput(input);
     }
 }
 
