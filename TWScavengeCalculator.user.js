@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kits's Scavenge Calculator
 // @description  Provides an in-game calculator utility for scavenging within the Tribal Wars online game. Credit for some of the code and most of the maths goes to Daniel Van Den Berg (daniel.dmvandenberg.nl)
-// @version      1.2.1
+// @version      1.3.0
 // @author       Kits (Github: Kitsee)
 // @grant        none
 // @updateURL    https://github.com/Kitsee/TWScavengeCalculator/raw/master/TWScavengeCalculator.user.js
@@ -181,7 +181,7 @@ function constructInterface(){
         <a>Time Limit</a>
     </th>
     <td colspan="2" >\
-        <select id="calc_time_limit" class="input-persist">\
+        <select id="calc_time_limit" class="input-persist" input-default="0">\
             <option value="15">15 Mins</option>\
             <option value="30">30 Mins</option>\
             <option value="45">45 Mins</option>\
@@ -202,6 +202,17 @@ function constructInterface(){
             <option value="1080">18 Hours</option>\
             <option value="1200">20 Hours</option>\
             <option value="0" selected="1">Unlimited</option>\
+        </select>\
+    </td>\
+</tr>\
+<tr>\
+    <th>
+        <a>Method</a>
+    </th>
+    <td colspan="2" >\
+        <select id="calc_mathod" class="input-persist" input-default="0">\
+            <option value="0">Equal</option>\
+            <option value="1">Max</option>\
         </select>\
     </td>\
 </tr>\
@@ -226,7 +237,7 @@ function constructInterface(){
 
     const inputs = Array.from(document.querySelectorAll(".input-persist"));
     for(let input of inputs){
-         doMakePersistentInput(input);
+         MakePersistentInput(input);
     }
 }
 
@@ -234,14 +245,9 @@ function calculateUnits(){
     let unitsEnabled = Array.from(document.querySelectorAll(".calc-unit-enabled")).map((e)=>{return e.checked;});
     let allUnitsElements = Array.from(document.querySelectorAll(".units-entry-all")).map((e)=>{return e;});
     let time_limit = parseInt(document.querySelector(`#calc_time_limit`).value);
-    console.log("time limit:", time_limit);
-    if(time_limit == 0){
-        time_limit = Infinity;
-    }
-    else{
-        time_limit = time_limit * 60;
-    }
+    time_limit = time_limit == 0 ? Infinity : time_limit * 60;
     let durationFactor = Math.pow(window.TribalWars.worldSpeed, -0.55);
+    let calcMethod = parseInt(document.querySelector(`#calc_mathod`).value);
 
     let calculateUnitsMissions = (availableMissions) => {
         let units = [];
@@ -275,13 +281,19 @@ function calculateUnits(){
             }
         }
 
-        let iDiv = r[0] + r[1] + r[2] + r[3];
+        let iDiv = Math.max(r[0] + r[1] + r[2] + r[3], 1);
         r[0] /= iDiv;
         r[1] /= iDiv;
         r[2] /= iDiv;
         r[3] /= iDiv;
 
-        var maxMissionCapacity = {0:Infinity,1:Infinity,2:Infinity,3:Infinity};;
+        var stats = {
+            ResPerRun:0,
+            ResPerHour:0,
+            RunTime:0,
+        };
+
+        let maxMissionCapacity = {0:Infinity,1:Infinity,2:Infinity,3:Infinity};;
         if(time_limit != Infinity){
             maxMissionCapacity = {
                 0:r[0] == 0 ? 0 : Math.pow(Math.pow((time_limit / durationFactor) - 1800,1/0.45)/Math.pow(0.10, 2)/100,1/2),
@@ -291,21 +303,25 @@ function calculateUnits(){
             };
         }
 
-        var desiredMissionCapacity = {
+        let desiredMissionCapacity = {
             0: Math.round( Math.min(totalCapacity * r[0], maxMissionCapacity[0] )),
             1: Math.round( Math.min(totalCapacity * r[1], maxMissionCapacity[1] )),
             2: Math.round( Math.min(totalCapacity * r[2], maxMissionCapacity[2] )),
             3: Math.round( Math.min(totalCapacity * r[3], maxMissionCapacity[3] ))
         }
 
-        var stats = {
-            ResPerRun:0,
-            ResPerHour:0,
-            RunTime:0,
-        };
+        if(calcMethod == 1) //max mode
+        {
+            desiredMissionCapacity = {
+                0: Math.round( r[0] == 0 ? 0 : maxMissionCapacity[0] ),
+                1: Math.round( r[1] == 0 ? 0 : maxMissionCapacity[1] ),
+                2: Math.round( r[2] == 0 ? 0 : maxMissionCapacity[2] ),
+                3: Math.round( r[3] == 0 ? 0 : maxMissionCapacity[3] )
+            }
+        }
 
-        var fill = (missionIdx, unit) => {
-            let allocatedUnitCount = Math.min(unit.count, Math.floor(desiredMissionCapacity[missionIdx] / unit.unitCapacity));
+        let fill = (missionIdx, unit) => {
+            let allocatedUnitCount = desiredMissionCapacity[missionIdx] == Infinity ? unit.count : Math.min(unit.count, Math.floor(desiredMissionCapacity[missionIdx] / unit.unitCapacity));
             desiredMissionCapacity[missionIdx] -= allocatedUnitCount * unit.unitCapacity;
             unit.count -= allocatedUnitCount;
             let outputElement = document.querySelector(`#calc_output_${unit.name}_${missionIdx}`);
@@ -313,22 +329,20 @@ function calculateUnits(){
             return allocatedUnitCount * unit.unitCapacity;
         }
 
-        var fillMission = (missionIdx, missionCapReturn) => {
-            let result = [];
+        let fillMission = (missionIdx, missionCapReturn) => {
             let totalCap = 0;
-
-            var resources = Math.round(desiredMissionCapacity[missionIdx] * missionCapReturn);
-            var runTime = (Math.pow(Math.pow(desiredMissionCapacity[missionIdx], 2) * 100 * Math.pow(missionCapReturn, 2), 0.45) + 1800) * durationFactor;
-            var RPH = runTime == 0 ? 0 : resources / runTime * 60 * 60;
-
-            stats.ResPerRun += resources;
-            stats.ResPerHour += RPH;
-            stats.RunTime = Math.max(stats.RunTime,runTime);
-
             for(let unit of units)
             {
                 totalCap += fill(missionIdx, unit);
             }
+
+            let resources = Math.round(totalCap * missionCapReturn);
+            let runTime = (Math.pow(Math.pow(totalCap, 2) * 100 * Math.pow(missionCapReturn, 2), 0.45) + 1800) * durationFactor;
+            let RPH = runTime == 0 ? 0 : resources / runTime * 60 * 60;
+
+            stats.ResPerRun += resources;
+            stats.ResPerHour += RPH;
+            stats.RunTime = Math.max(stats.RunTime,runTime);
         }
 
         fillMission(3, 0.75);
@@ -474,17 +488,18 @@ function sendScavRequests(){
     updateResults();
 }
 
-
-
-
-
-function doMakePersistentInput(eInput) {
+function makePersistentInput(eInput) {
     if (!eInput.id){
-        console.warn(`doMakePersistentInput called on element without id.`, eInput);
+        console.warn(`makePersistentInput called on element without id.`, eInput);
         debugger;
         return;
     }
     let sStoredState = window.localStorage[`persistent_input_${eInput.id}`];
+    let defaultAttrib = eInput.getAttribute("input-default");
+    if (sStoredState == null && defaultAttrib != null){
+        sStoredState = defaultAttrib;
+        console.warn(`makePersistentInput ${eInput.id} defaulting to value of ${defaultAttrib}`)
+    }
     eInput.setValue = (sInput)=>{ window.localStorage[`persistent_input_${eInput.id}`] = sInput;};
     eInput.doRestore = ()=>{eInput.value = sStoredState;};
     eInput.getValue = ()=>{return eInput.value;};
